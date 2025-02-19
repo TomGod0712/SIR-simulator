@@ -19,22 +19,20 @@
       align-items: center;
       justify-content: center;
       padding: 20px;
-      /* Removed background graphic from body */
     }
-    /* Container now carries the background graphic */
+    /* Container with background graphic */
     .container {
-      /* Multiple backgrounds: a nearly opaque white overlay + your background image */
       background: 
         linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)),
-        url("WhatsApp Image 2025-02-10 at 3.27.04 PM.jpeg") 
-          no-repeat center center;
+        url("/Users/chuimingyuen/Library/CloudStorage/OneDrive-St.Paul'sConventSchool(SecondarySection)/Research/Trial 1/WhatsApp Image 2025-02-10 at 3.27.04 PM.jpeg") no-repeat center center;
       background-size: cover;
-      max-width: 1200px;  /* Increase or decrease to adjust overall container width */
+      max-width: 1200px;
       width: 100%;
       margin: 0 auto;
       padding: 30px 40px;
       border-radius: 12px;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+      min-height: 600px;
     }
     /* Header styling */
     .header {
@@ -55,18 +53,17 @@
     .content {
       display: flex;
       gap: 20px;
-      align-items: center;  /* Vertically center columns */
+      align-items: center;
     }
-    /* Adjust column widths using flex basis:
-       - Try changing 40% and 60% to other values for different ratios */
     .parameters {
       flex: 1 1 40%;
     }
     .graph {
       flex: 1 1 60%;
       display: flex;
-      align-items: center;   /* Center the canvas vertically */
-      justify-content: center; /* Center the canvas horizontally */
+      align-items: center;
+      justify-content: center;
+      min-width: 400px; /* Prevent the graph column from shrinking too much */
     }
     /* Form styling inside parameters panel */
     .form-group {
@@ -96,11 +93,15 @@
     .form-group input[readonly] {
       background-color: #f0f0f0;
     }
-    /* Button styling */
-    button {
-      display: block;
-      width: 200px;
-      margin: 30px auto;
+    /* Button group container for side-by-side buttons */
+    .button-group {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin: 20px 0;
+    }
+    .button-group button {
+      flex: 1;
       padding: 12px 0;
       font-size: 18px;
       font-weight: 500;
@@ -111,13 +112,11 @@
       cursor: pointer;
       transition: background-color 0.3s ease, transform 0.2s ease;
     }
-    button:hover {
+    .button-group button:hover {
       background-color: #68d3c2;
       transform: translateY(-2px);
     }
-    /* Adjust the canvas styling so that its aspect ratio is maintained.
-       Here, we remove forced height and let Chart.js maintain the ratio.
-       You can also adjust the wrapper (.graph) size if needed. */
+    /* Remove any fixed height; let Chart.js manage the aspect ratio */
     .graph canvas {
       max-width: 100%;
       height: auto;
@@ -131,11 +130,11 @@
         flex-direction: column;
         align-items: flex-start;
       }
-      .form-group label {
+      .form-group label, .form-group input {
         width: 100%;
       }
-      .form-group input {
-        width: 100%;
+      .button-group {
+        flex-direction: column;
       }
     }
   </style>
@@ -183,7 +182,11 @@
           <label for="days">Simulation Days:</label>
           <input type="number" id="days" value="160" />
         </div>
-        <button onclick="runSimulation()">Run Simulation</button>
+        <!-- Button group for Run and Pause/Resume -->
+        <div class="button-group">
+          <button id="runButton" onclick="runSimulation()">Run</button>
+          <button id="pauseButton" onclick="togglePause()">Pause</button>
+        </div>
       </div>
       <!-- Graph Display -->
       <div class="graph">
@@ -193,40 +196,42 @@
   </div>
 
   <script>
-    // Global flag to prevent recursive updates
-    let isUpdating = false;
-    // Global chart instance and simulation interval
+    // Global simulation state variables
+    let simulationInterval = null;
+    let currentDay = 0;
+    let timeArray = [];
+    let S_array = [];
+    let I_array = [];
+    let R_array = [];
+    let S, I, R;
+    let dt = 1;
+    let totalDays = 160; // Will be updated from user input
+
+    // Global chart instance
     let chart;
-    let simulationInterval;
 
     // --- Parameter Dependency Functions ---
     function updateSusceptible() {
       const N = parseFloat(document.getElementById("population").value);
-      const I = parseFloat(document.getElementById("initialInfected").value);
+      const I_val = parseFloat(document.getElementById("initialInfected").value);
       const R_init = parseFloat(document.getElementById("initialRecovered").value);
-      const S = N - I - R_init;
-      document.getElementById("susceptible").value = S;
+      const S_val = N - I_val - R_init;
+      document.getElementById("susceptible").value = S_val;
     }
 
     function updateBasicReproductionFromBetaGamma() {
-      if (isUpdating) return;
-      isUpdating = true;
       const beta = parseFloat(document.getElementById("beta").value);
       const gamma = parseFloat(document.getElementById("gamma").value);
       if (gamma !== 0) {
         document.getElementById("basicReproduction").value = (beta / gamma).toFixed(2);
       }
-      isUpdating = false;
     }
 
     function updateBetaFromBasicReproduction() {
-      if (isUpdating) return;
-      isUpdating = true;
       const reproduction = parseFloat(document.getElementById("basicReproduction").value);
       const gamma = parseFloat(document.getElementById("gamma").value);
       document.getElementById("beta").value = (reproduction * gamma).toFixed(2);
       document.getElementById("basicReproduction").value = reproduction.toFixed(2);
-      isUpdating = false;
     }
 
     document.getElementById("population").addEventListener("input", updateSusceptible);
@@ -236,30 +241,32 @@
     document.getElementById("gamma").addEventListener("input", updateBasicReproductionFromBetaGamma);
     document.getElementById("basicReproduction").addEventListener("input", updateBetaFromBasicReproduction);
 
-    // --- Simulation & Dynamic Graph Animation ---
+    // --- Simulation Functions ---
     function runSimulation() {
+      // Clear any existing simulation loop
       if (simulationInterval) {
         clearInterval(simulationInterval);
       }
-      
+      // Initialize simulation state from form inputs
       const N = parseFloat(document.getElementById("population").value);
-      let I = parseFloat(document.getElementById("initialInfected").value);
-      let R = parseFloat(document.getElementById("initialRecovered").value);
-      let S = N - I - R;
-      const beta = parseFloat(document.getElementById("beta").value);
-      const gamma = parseFloat(document.getElementById("gamma").value);
-      const totalDays = parseInt(document.getElementById("days").value, 10);
-      const dt = 1;
+      const initialI = parseFloat(document.getElementById("initialInfected").value);
+      const initialR = parseFloat(document.getElementById("initialRecovered").value);
+      S = N - initialI - initialR;
+      I = initialI;
+      R = initialR;
+      totalDays = parseInt(document.getElementById("days").value, 10);
       
-      let timeArray = [0];
-      let S_array = [S];
-      let I_array = [I];
-      let R_array = [R];
+      // Initialize arrays and currentDay
+      currentDay = 0;
+      timeArray = [0];
+      S_array = [S];
+      I_array = [I];
+      R_array = [R];
       
+      // Destroy existing chart if any
       if (chart) {
         chart.destroy();
       }
-      
       const ctx = document.getElementById('sirChart').getContext('2d');
       chart = new Chart(ctx, {
         type: 'line',
@@ -292,48 +299,70 @@
         options: {
           animation: false,
           responsive: true,
-          maintainAspectRatio: true, // Ensures the chart maintains its ratio
+          maintainAspectRatio: true,
+          aspectRatio: 2, // Adjust this value to achieve the desired width-to-height ratio
           plugins: {
             legend: { position: 'top' },
           },
           scales: {
-            x: {
-              title: { display: true, text: 'Time (days)' },
-            },
-            y: {
-              title: { display: true, text: 'Population' },
-            },
+            x: { title: { display: true, text: 'Time (days)' } },
+            y: { title: { display: true, text: 'Population' } },
           },
         }
       });
       
-      let currentDay = 0;
-      simulationInterval = setInterval(() => {
-        if (currentDay >= totalDays) {
-          clearInterval(simulationInterval);
-          return;
-        }
-        
-        let dS = -beta * S * I / N;
-        let dI = beta * S * I / N - gamma * I;
-        let dR = gamma * I;
-        
-        S += dS * dt;
-        I += dI * dt;
-        R += dR * dt;
-        currentDay += dt;
-        
-        timeArray.push(currentDay);
-        S_array.push(S);
-        I_array.push(I);
-        R_array.push(R);
-        
-        chart.data.labels = timeArray;
-        chart.data.datasets[0].data = S_array;
-        chart.data.datasets[1].data = I_array;
-        chart.data.datasets[2].data = R_array;
-        chart.update();
-      }, 100);
+      // Start simulation loop
+      simulationInterval = setInterval(updateSimulation, 100);
+      // Reset pause button text in case it was "Resume"
+      document.getElementById("pauseButton").innerText = "Pause";
+    }
+
+    function updateSimulation() {
+      if (currentDay >= totalDays) {
+        clearInterval(simulationInterval);
+        simulationInterval = null;
+        return;
+      }
+      
+      // SIR model equations using Euler's method
+      const N = parseFloat(document.getElementById("population").value);
+      const beta = parseFloat(document.getElementById("beta").value);
+      const gamma = parseFloat(document.getElementById("gamma").value);
+      
+      const dS = -beta * S * I / N;
+      const dI = beta * S * I / N - gamma * I;
+      const dR = gamma * I;
+      
+      S += dS * dt;
+      I += dI * dt;
+      R += dR * dt;
+      currentDay += dt;
+      
+      // Append updated values to arrays
+      timeArray.push(currentDay);
+      S_array.push(S);
+      I_array.push(I);
+      R_array.push(R);
+      
+      // Update chart data
+      chart.data.labels = timeArray;
+      chart.data.datasets[0].data = S_array;
+      chart.data.datasets[1].data = I_array;
+      chart.data.datasets[2].data = R_array;
+      chart.update();
+    }
+
+    // Toggle Pause/Resume functionality
+    function togglePause() {
+      const pauseButton = document.getElementById("pauseButton");
+      if (simulationInterval) {
+        clearInterval(simulationInterval);
+        simulationInterval = null;
+        pauseButton.innerText = "Resume";
+      } else {
+        simulationInterval = setInterval(updateSimulation, 100);
+        pauseButton.innerText = "Pause";
+      }
     }
   </script>
 </body>
