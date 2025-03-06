@@ -24,7 +24,7 @@
     .container {
       background: 
         linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)),
-        url("WhatsApp Image 2025-02-10 at 3.27.04 PM.jpeg") no-repeat center center;
+        url("C:\Users\spcs-user.DESKTOP-C1GC2JO\OneDrive - St. Paul's Convent School (Secondary Section)\Research\Trial 1\WhatsApp Image 2025-02-10 at 3.27.04 PM") no-repeat center center;
       background-size: cover;
       max-width: 1200px;
       width: 100%;
@@ -154,6 +154,11 @@
           <label for="population">Total Population (N):</label>
           <input type="number" id="population" value="1000" />
         </div>
+        <!-- New Vaccination Input -->
+        <div class="form-group">
+          <label for="vaccination">Vaccination Percentage (%):</label>
+          <input type="number" id="vaccination" value="0" step="0.1" />
+        </div>
         <div class="form-group">
           <label for="initialInfected">Initial Infected (I₀):</label>
           <input type="number" id="initialInfected" value="1" />
@@ -205,19 +210,24 @@
     let R_array = [];
     let S, I, R;
     let dt = 1;
-    let totalDays = 160; // Will be updated from user input
-
-    // Global chart instance
+    let totalDays = 160;
     let chart;
 
-    // --- Parameter Dependency Functions ---
+    // Update initial susceptible (S₀) based on vaccination percentage.
     function updateSusceptible() {
       const N = parseFloat(document.getElementById("population").value);
+      const vaccination = parseFloat(document.getElementById("vaccination").value) / 100;
       const I_val = parseFloat(document.getElementById("initialInfected").value);
       const R_init = parseFloat(document.getElementById("initialRecovered").value);
-      const S_val = N - I_val - R_init;
+      const vaccinatedCount = N * vaccination;
+      const S_val = N - I_val - R_init - vaccinatedCount;
       document.getElementById("susceptible").value = S_val;
     }
+    document.getElementById("population").addEventListener("input", updateSusceptible);
+    document.getElementById("vaccination").addEventListener("input", updateSusceptible);
+    document.getElementById("initialInfected").addEventListener("input", updateSusceptible);
+    document.getElementById("initialRecovered").addEventListener("input", updateSusceptible);
+    updateSusceptible();
 
     function updateBasicReproductionFromBetaGamma() {
       const beta = parseFloat(document.getElementById("beta").value);
@@ -226,44 +236,38 @@
         document.getElementById("basicReproduction").value = (beta / gamma).toFixed(2);
       }
     }
-
     function updateBetaFromBasicReproduction() {
       const reproduction = parseFloat(document.getElementById("basicReproduction").value);
       const gamma = parseFloat(document.getElementById("gamma").value);
       document.getElementById("beta").value = (reproduction * gamma).toFixed(2);
       document.getElementById("basicReproduction").value = reproduction.toFixed(2);
     }
-
-    document.getElementById("population").addEventListener("input", updateSusceptible);
-    document.getElementById("initialInfected").addEventListener("input", updateSusceptible);
-    document.getElementById("initialRecovered").addEventListener("input", updateSusceptible);
     document.getElementById("beta").addEventListener("input", updateBasicReproductionFromBetaGamma);
     document.getElementById("gamma").addEventListener("input", updateBasicReproductionFromBetaGamma);
     document.getElementById("basicReproduction").addEventListener("input", updateBetaFromBasicReproduction);
 
-    // --- Simulation Functions ---
+    // Run simulation: include vaccination in initial conditions.
     function runSimulation() {
-      // Clear any existing simulation loop
       if (simulationInterval) {
         clearInterval(simulationInterval);
       }
-      // Initialize simulation state from form inputs
       const N = parseFloat(document.getElementById("population").value);
-      const initialI = parseFloat(document.getElementById("initialInfected").value);
-      const initialR = parseFloat(document.getElementById("initialRecovered").value);
-      S = N - initialI - initialR;
-      I = initialI;
-      R = initialR;
+      const vaccination = parseFloat(document.getElementById("vaccination").value) / 100;
+      const I0 = parseFloat(document.getElementById("initialInfected").value);
+      const R0 = parseFloat(document.getElementById("initialRecovered").value);
+      const vaccinatedCount = N * vaccination;
+      // Remove vaccinated individuals from susceptible and add them to recovered.
+      S = N - I0 - R0 - vaccinatedCount;
+      I = I0;
+      R = R0 + vaccinatedCount;
       totalDays = parseInt(document.getElementById("days").value, 10);
       
-      // Initialize arrays and currentDay
       currentDay = 0;
       timeArray = [0];
       S_array = [S];
       I_array = [I];
       R_array = [R];
       
-      // Destroy existing chart if any
       if (chart) {
         chart.destroy();
       }
@@ -288,7 +292,7 @@
               tension: 0.1,
             },
             {
-              label: 'Recovered',
+              label: 'Recovered/Immune',
               data: R_array,
               borderColor: '#34A853',
               fill: false,
@@ -300,7 +304,7 @@
           animation: false,
           responsive: true,
           maintainAspectRatio: true,
-          aspectRatio: 2, // Adjust this value to achieve the desired width-to-height ratio
+          aspectRatio: 2, // Maintains correct chart ratio
           plugins: {
             legend: { position: 'top' },
           },
@@ -311,9 +315,7 @@
         }
       });
       
-      // Start simulation loop
       simulationInterval = setInterval(updateSimulation, 100);
-      // Reset pause button text in case it was "Resume"
       document.getElementById("pauseButton").innerText = "Pause";
     }
 
@@ -323,8 +325,6 @@
         simulationInterval = null;
         return;
       }
-      
-      // SIR model equations using Euler's method
       const N = parseFloat(document.getElementById("population").value);
       const beta = parseFloat(document.getElementById("beta").value);
       const gamma = parseFloat(document.getElementById("gamma").value);
@@ -338,21 +338,14 @@
       R += dR * dt;
       currentDay += dt;
       
-      // Append updated values to arrays
       timeArray.push(currentDay);
       S_array.push(S);
       I_array.push(I);
       R_array.push(R);
       
-      // Update chart data
-      chart.data.labels = timeArray;
-      chart.data.datasets[0].data = S_array;
-      chart.data.datasets[1].data = I_array;
-      chart.data.datasets[2].data = R_array;
       chart.update();
     }
 
-    // Toggle Pause/Resume functionality
     function togglePause() {
       const pauseButton = document.getElementById("pauseButton");
       if (simulationInterval) {
